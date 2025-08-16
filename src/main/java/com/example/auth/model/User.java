@@ -1,5 +1,6 @@
 package com.example.auth.model;
 
+import com.example.auth.model.Enums.Role;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
