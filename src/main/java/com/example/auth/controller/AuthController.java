@@ -61,6 +61,79 @@ public class AuthController {
     }
 
     /**
+     * Returns the current authenticated user's profile.
+     * Requires Authorization: Bearer <access-token>.
+     */
+    @GetMapping("/me")
+    public ResponseEntity<ApiResponse<UserResponse>> me(Principal principal) {
+        try {
+            if (principal == null || principal.getName() == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ApiResponse.error("Unauthorized"));
+            }
+            String username = principal.getName();
+            User user = userRepository.findByUsername(username)
+                    .orElseGet(() -> userRepository.findByEmail(username).orElse(null));
+            if (user == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ApiResponse.error("User not found"));
+            }
+            return ResponseEntity.ok(ApiResponse.success("OK", UserResponse.fromUser(user)));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponse.error("Failed to fetch profile"));
+        }
+    }
+
+    /**
+     * JWT-based login endpoint. Returns access token (short-lived).
+     */
+    @PostMapping("/login")
+    public ResponseEntity<ApiResponse<JwtLoginResponse>> login(@Valid @RequestBody LoginRequest request, BindingResult bindingResult) {
+        try {
+            if (bindingResult.hasErrors()) {
+                String errorMessage = bindingResult.getFieldErrors().stream()
+                        .map(error -> error.getDefaultMessage())
+                        .collect(Collectors.joining(", "));
+                return ResponseEntity.badRequest().body(ApiResponse.error(errorMessage));
+            }
+            JwtLoginResponse resp = authService.login(request);
+            return ResponseEntity.ok(ApiResponse.success("Login successful", resp));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ApiResponse.error(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponse.error("Login failed"));
+        }
+    }
+
+    /**
+     * Renews an about-to-expire token by issuing a new JWT. Requires Authorization header with current token.
+     */
+    @PostMapping("/token/renew")
+    public ResponseEntity<ApiResponse<JwtLoginResponse>> renew(@RequestHeader(HttpHeaders.AUTHORIZATION) String authorization) {
+        try {
+            JwtLoginResponse resp = authService.renew(authorization);
+            return ResponseEntity.ok(ApiResponse.success("Token renewed", resp));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ApiResponse.error(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponse.error("Renew failed"));
+        }
+    }
+
+    /**
+     * Logs out by revoking the current JWT so it cannot be used anymore.
+     */
+    @PostMapping("/logout")
+    public ResponseEntity<ApiResponse<String>> logout(@RequestHeader(HttpHeaders.AUTHORIZATION) String authorization) {
+        try {
+            authService.logout(authorization);
+            return ResponseEntity.ok(ApiResponse.success("Logged out successfully", null));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponse.error("Logout failed"));
+        }
+    }
+
+    /**
      * Initiates the password reset process by sending a reset email.
      *
      * @param request Forgot password request containing the user's email
